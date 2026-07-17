@@ -1,11 +1,11 @@
-import crypto from 'node:crypto';
-import { Buffer } from 'node:buffer';
+const crypto = require('crypto');
+const { Buffer } = require('buffer');
 
 // ગ્લોબલ કેશ (Vercel ની 1GB RAM માં નાના ટુકડા સાચવવા માટે)
 const globalPaperCache = new Map(); 
 const globalKeyCache = new Map();
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // 🛑 Security: CORS સેટીંગ્સ
   const ALLOWED_DOMAIN = "https://neetxcbt.pythonanywhere.com";
   res.setHeader('Access-Control-Allow-Origin', ALLOWED_DOMAIN);
@@ -28,35 +28,31 @@ export default async function handler(req, res) {
 
     if (!paperName || !qNum) throw new Error("Missing params");
 
-    const qInt = parseInt(q_num);
+    // 🛠️ અહિયાં q_num ની જગ્યાએ qNum કરવાનો સુધારો કર્યો છે
+    const qInt = parseInt(qNum);
 
     // ==============================================================================
     // STEP 1: SMART CHUNK CALCULATOR (૪ માંથી કયો ટુકડો લાવવો તેનો હિસાબ)
     // ==============================================================================
     let partNum = 1;
-    if (qInt <= 45) partNum = 1;        // ૧ થી ૪૫ પ્રશ્નો = Part 1
-    else if (qInt <= 90) partNum = 2;   // ૪૬ થી ૯૦ પ્રશ્નો = Part 2
-    else if (qInt <= 135) partNum = 3;  // ૯૧ થી ૧૩૫ પ્રશ્નો = Part 3
-    else partNum = 4;                   // ૧૩૬ થી ૧૮૦ પ્રશ્નો = Part 4
+    if (qInt <= 45) partNum = 1;        
+    else if (qInt <= 90) partNum = 2;   
+    else if (qInt <= 135) partNum = 3;  
+    else partNum = 4;                   
 
-    // કેશ અને ગિટહબ માટે યુનિક નામ (દા.ત. AA_P1, AA_P2...)
     const chunkName = `${paperName}_P${partNum}`;
 
     // ==============================================================================
     // STEP 2: LOAD 10MB CHUNK JSON (With RAM Protector - Memory Eviction)
     // ==============================================================================
-    
-    // 🛡️ SMART LOGIC: જો RAM માં કોઈ બીજો ટુકડો હોય તો કચરો સાફ કરો (RAM ફ્રી કરો)
     if (globalPaperCache.size > 0 && !globalPaperCache.has(chunkName)) {
        globalPaperCache.clear(); 
     }
 
     let paperData;
     if (globalPaperCache.has(chunkName)) {
-      // ડાયરેક્ટ RAM માંથી (સુપર ફાસ્ટ!)
       paperData = globalPaperCache.get(chunkName);
     } else {
-      // ગિટહબ પરથી માત્ર 10 MB નો નાનો ટુકડો જ લાવો (અહીં Elite-CBT-Data સુધારી દીધું છે!)
       const githubUsername = "patelyyy-cyber";
       const repoName = "Elite-CBT-Data";
       const CDN_URL = `https://raw.githubusercontent.com/${githubUsername}/${repoName}/main/${chunkName}.json`;
@@ -65,7 +61,7 @@ export default async function handler(req, res) {
       if (!response.ok) throw new Error(`GitHub File Not Found: ${chunkName}.json`);
       
       paperData = await response.json();
-      globalPaperCache.set(chunkName, paperData); // ભવિષ્ય માટે સેવ કરો
+      globalPaperCache.set(chunkName, paperData); 
     }
 
     const encryptedImage = paperData[qNum];
@@ -115,7 +111,7 @@ export default async function handler(req, res) {
     // ==============================================================================
     // STEP 5: FINAL RESPONSE (With Edge Caching)
     // ==============================================================================
-    res.setHeader('Cache-Control', 's-maxage=86400'); // Vercel Edge Server પર 24 કલાક સેવ રહેશે
+    res.setHeader('Cache-Control', 's-maxage=86400'); 
     return res.status(200).json({ status: "success", image_base64: decryptedBase64 });
 
   } catch (error) {
