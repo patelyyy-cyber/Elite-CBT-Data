@@ -55,7 +55,7 @@ module.exports = async function handler(req, res) {
     } else {
       const githubUsername = "patelyyy-cyber";
       const repoName = "Elite-CBT-Data";
-      const CDN_URL = `https://cdn.jsdelivr.net/gh/${githubUsername}/${repoName}@main/${chunkName}.json`;
+      const CDN_URL = `https://cdn.jsdelivr.net/gh/${githubUsername}/${repoName}@main/${chunkName}.json?v=${Date.now()}`;
       
       const response = await fetch(CDN_URL);
       if (!response.ok) throw new Error(`GitHub File Not Found: ${chunkName}.json`);
