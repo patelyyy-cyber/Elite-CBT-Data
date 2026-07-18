@@ -32,15 +32,9 @@ module.exports = async function handler(req, res) {
     const qInt = parseInt(qNum);
 
     // ==============================================================================
-    // STEP 1: SMART CHUNK CALCULATOR (૪ માંથી કયો ટુકડો લાવવો તેનો હિસાબ)
+    // STEP 1: DIRECT FILE SELECTOR (દરેક પેજની અલગ ફાઈલ લાવવા માટે)
     // ==============================================================================
-    let partNum = 1;
-    if (qInt <= 45) partNum = 1;        
-    else if (qInt <= 90) partNum = 2;   
-    else if (qInt <= 135) partNum = 3;  
-    else partNum = 4;                   
-
-    const chunkName = `${paperName}_P${partNum}`;
+    const chunkName = `${paperName}_P${qInt}`;
 
     // ==============================================================================
     // STEP 2: LOAD 10MB CHUNK JSON (With RAM Protector - Memory Eviction)
