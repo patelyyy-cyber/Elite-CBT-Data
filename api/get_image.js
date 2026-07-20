@@ -32,7 +32,7 @@ module.exports = async function handler(req, res) {
     const githubUsername = "patelyyy-cyber";
     const repoName = "Elite-CBT-Data";
     // અહી Date.now() લગાવ્યું છે જેથી GitHub ને એમ જ લાગે કે દર વખતે નવી ફાઈલ માંગે છે
-    const CDN_URL = `https://raw.githubusercontent.com/${githubUsername}/${repoName}/main/${chunkName}.json?bypass=${Date.now()}`;
+    const CDN_URL = `https://cdn.jsdelivr.net/gh/${githubUsername}/${repoName}@main/${chunkName}.json`;
 
     // cache: "no-store" એટલે Vercel ને કહી દીધું કે મગજમાં કશું સેવ રાખતો નહિ
     const response = await fetch(CDN_URL, { cache: "no-store" });
