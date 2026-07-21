@@ -4,11 +4,10 @@ const { Buffer } = require('buffer');
 // 🚨 બધી જ ગ્લોબલ કેશ (Cache) કાઢી નાખી છે, જેથી દર વખતે નવો જ ડેટા આવે!
 
 module.exports = async function handler(req, res) {
-  // 🛑 Security: CORS સેટીંગ્સ
-  const ALLOWED_DOMAIN = "https://neetxcbt.pythonanywhere.com";
-  res.setHeader('Access-Control-Allow-Origin', ALLOWED_DOMAIN);
+  // ૧. 🛑 Security: CORS સેટીંગ્સ (હવે ગમે તે Vercel ડોમેન પરથી ચાલશે)
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-CSRFToken');
 
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Max-Age', '86400');
@@ -20,41 +19,46 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const paperName = req.body.paper_name;
-    const qNum = req.body.q_num;
+    const paperName = req.body.paper_name || req.body.paper_id;
+    const qNum = str(req.body.q_num || '');
 
-    if (!paperName || !qNum) throw new Error("Missing params");
+    if (!paperName || !qNum) throw new Error("Missing params: paper_name or q_num");
+    
     const qInt = parseInt(qNum);
-    const chunkName = `${paperName}_P${qInt}`;
+    // ૨. 🛠️ અતિ મહત્વનો સુધારો: હવે ૧૦-૧૦ પ્રશ્નોવાળા Part મુજબ સાચું નામ બનશે (દા.ત. _Part1.json)
+    const chunkNum = Math.floor((qInt - 1) / 10) + 1;
+    const chunkName = `${paperName}_Part${chunkNum}.json`;
 
-    // 🛠️ અતિ મહત્વનો સુધારો: jsDelivr કાઢીને સીધું GitHub Raw વાપર્યું છે!
-    // jsDelivr જૂની ફાઈલ પકડી રાખતું હતું, એટલે એરર આવતી હતી.
-    const githubUsername = "patelyyy-cyber";
-    const repoName = "Elite-CBT-Data";
-    // અહી Date.now() લગાવ્યું છે જેથી GitHub ને એમ જ લાગે કે દર વખતે નવી ફાઈલ માંગે છે
-    const CDN_URL = `https://cdn.jsdelivr.net/gh/${githubUsername}/${repoName}@main/${chunkName}.json`;
+    // ૩. 🚀 Cloudflare Worker (Backblaze B2) પરથી ફાઈલ ખેંચો
+    const CLOUDFLARE_URL = `https://elite-exam-api.patelyyypaat.workers.dev/${chunkName}`;
 
-    // cache: "no-store" એટલે Vercel ને કહી દીધું કે મગજમાં કશું સેવ રાખતો નહિ
-    const response = await fetch(CDN_URL, { cache: "no-store" });
-    if (!response.ok) throw new Error(`GitHub File Not Found: ${chunkName}.json`);
+    const response = await fetch(CLOUDFLARE_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Cloudflare CDN File Not Found: ${chunkName} (Status: ${response.status})`);
 
     const paperData = await response.json();
-    const encryptedImage = paperData[qNum];
+    // JSON માં પ્રશ્ન નંબર "1" અથવા "P1" અથવા integer 1 ગમે તે રીતે હોય, શોધી લેશે
+    const encryptedImage = paperData[qNum] || paperData[`P${qNum}`] || paperData[qInt] || Object.values(paperData)[0];
     if (!encryptedImage) throw new Error(`Question ${qNum} image not found in ${chunkName}.`);
 
-    // પાયથોન પાસેથી ચાવી (Key) લેવી (દર વખતે નવી જ લાવશે)
-    const pyRes = await fetch(`https://neetxcbt.pythonanywhere.com/api/get_chunk_key`, {
+    // ૪. 🔐 Vercel પર ચાલતા પોતાના જ પાયથોન સર્વર પાસેથી ચાવી (Key) લેવી (PythonAnywhere કાઢી નાખ્યું!)
+    // req.headers.host આપોઆપ તમારું સાચું Vercel ડોમેન પકડી લેશે
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers.host;
+    const pyRes = await fetch(`${protocol}://${host}/api/get_chunk_key`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Cookie': req.headers.cookie || '' // સેશન ચાલુ રાખવા માટે કુકીઝ મોકલવી જરૂરી છે
+      },
       body: JSON.stringify({ paper_name: paperName, q_num: qNum }),
       cache: "no-store"
     });
+    
     const pyData = await pyRes.json();
-
-    if (pyData.status !== "success") throw new Error("Key not found on Server");
+    if (pyData.status !== "success") throw new Error(`Key not found on Vercel Server: ${pyData.message || ''}`);
     const secretKey = pyData.key;
 
-    // AES-256-CBC DECRYPTION (ચાવીથી તાળું ખોલવાની પ્રોસેસ)
+    // ૫. 🔓 AES-256-CBC DECRYPTION (ચાવીથી તાળું ખોલવાની પ્રોસેસ)
     const cipherBytes = Buffer.from(encryptedImage, 'base64');
     const salt = cipherBytes.subarray(8, 16);
     const data = cipherBytes.subarray(16);
@@ -72,11 +76,17 @@ module.exports = async function handler(req, res) {
     let decryptedBase64 = decipher.update(data, undefined, 'utf8');
     decryptedBase64 += decipher.final('utf8');
 
+    // જો આગળ data:image ના લાગ્યું હોય તો લગાવી દેવું
+    if (!decryptedBase64.startsWith("data:image")) {
+      decryptedBase64 = `data:image/jpeg;base64,${decryptedBase64}`;
+    }
+
     // ફાઇનલ ખુલેલો ફોટો મોકલો (કોઈ જ જાતના કેશિંગ વગર)
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     return res.status(200).json({ status: "success", image_base64: decryptedBase64 });
 
   } catch (error) {
+    console.error("Decryption Handler Error:", error);
     return res.status(500).json({ status: "error", message: error.message });
   }
 }
